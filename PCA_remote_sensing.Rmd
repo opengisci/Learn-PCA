@@ -67,13 +67,24 @@ In these visualizations, vegetation appears red and urban areas appear blue-gree
 plot(l7, rgb = c(4,3,2) )
 ```
 
+It looks like some of the bands might have correlated information. Let's see...
+
+```{r}
+cormatrix <- l7 %>%  split("band") %>% as.data.frame() %>% select(-c(1,2)) %>% cor()
+cormatrix
+```
+Indeed, band 1 (Blue) is highly correlated with band 2 (green) and 3 (red).
+This means that when we look at a true color image, we're seeing a lot of autocorrelated data and we're missing out on a lot of other information collected by the satellite.
+
+Bands 5 and 6 are also highly correlated with one another.
+
 What if we could create **one** band that contains the most possible information from all six?
 
 And then a **second** band containing the most possible remaining information?
 
 and so on...
 
-We probably wouldn't even need all six bands to convey most of the information... 
+We probably wouldn't even need all six bands to convey most of the information, because several of the bands are correlated with one another anyway.
 
 Let's calculate the principal components with **principal component analysis (PCA)**.
 
