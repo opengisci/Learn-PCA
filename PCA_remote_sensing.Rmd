@@ -1,0 +1,142 @@
+---
+title: "PCA with stars objects"
+author: "Joseph Holler"
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE, dev = "png")
+require(dplyr)
+require(stars)
+require(here)
+```
+
+This vignette is based on sections of Edzer Pebesma's Statistical modelling with stars objects: <https://r-spatial.github.io/stars/articles/stars7.html>
+
+### stars objects as data.frames
+
+The analogy of stars objects to `data.frame` is this:
+
+* each attribute (array) becomes a single column
+* dimensions become added (index) columns
+
+To see how this works with the 6-band example dataset, consider this:
+
+```{r}
+library(stars)
+l7 <- read_stars(here("L7.tif"))
+l7
+as.data.frame(l7) %>% head()
+```
+
+We see that we get **one** single variable with the object (array) name, and
+added columns with the dimension values (x, y, band). In a typical case, we
+would like to have the six bands distributed over six variables, and have
+a single observation (row) for each x/y pair.
+For this, we _could_ use e.g. `utils::unstack` or `dplyr::pivot_wider` on this data.frame, but
+a more efficient way is to use the dedicated `split` method for `stars` objects,
+which resolves a dimension and splits it over attributes, one for each dimension value:
+
+```{r}
+l7 %>% split("band") %>%
+  as.data.frame() %>% 
+  head()
+```
+
+The reason that `split` is more efficient than the mentioned alternatives is that (i) `split` does not have to match records based on dimensions (x/y), and (ii) it works for out-of-memory (stars_proxy) arrays, in the chunked process/write loop of `write_stars()`.
+
+### Principal components
+
+First, let's visualize six bands of data included in a Landsat 7 scene.
+
+```{r}
+plot(l7, breaks = "equal", join_zlim = FALSE)
+```
+As you can see, many of the bands contain similar information. 
+
+We can visualize information from at most three bands at a time with red (band 3), green (band 2), and blue (band 1) color.
+For example, here is a true color visualization with red color = red energy, green = green energy, and blue = blue energy.
+
+```{r}
+plot(l7, rgb = c(3,2,1) )
+```
+
+Or, here is a false color visualization with red color = infrared energy, green = red energy, and blue = green energy.
+In these visualizations, vegetation appears red and urban areas appear blue-green.
+
+```{r}
+plot(l7, rgb = c(4,3,2) )
+```
+
+What if we could create **one** band that contains the most possible information from all six?
+
+And then a **second** band containing the most possible remaining information?
+
+and so on...
+
+We probably wouldn't even need all six bands to convey most of the information... 
+
+Let's calculate the principal components with **principal component analysis (PCA)**.
+
+```{r}
+tif = system.file("tif/L7_ETMs.tif", package = "stars")
+r = split(read_stars(tif))
+pc = prcomp(as.data.frame(r)[,-(1:2)]) # based on all data
+out = predict(r, pc)
+write_stars(merge(out), "pca.tif")
+```
+
+Display the variance explained by each component
+
+```{r}
+summary(pc)
+```
+
+The first component explains 70% of variance in the six satellite image bands.  
+The second component explains 25% of the variance, for a cumulative 95% of all variance.  
+By the time we add a third component, we have already explained 99.7% of all of the variance from six bands of satellite data.
+
+Let's display the loadings for each principal component
+
+```{r}
+pc$rotation
+```
+
+How can we interpret this?
+The first component is dominated by information from Bands 5 and 6 (short wave infrared)
+The second component is dominated by a lack of visual light (bands 1 2 and 3) and presence of near infrared (band 4)
+
+```{r}
+plot(merge(out), breaks = "equal", join_zlim = FALSE)
+```
+
+First of all, the band with the most contrast is PC1, in which water/land is very clear.  
+In PC2 and PC3, we can see more subtle features, including clouds/smoke, beaches, and vegetation / bare or built up areas.
+PC3 is starting to emphasize less important elements, including shadows in the topography and differences in the water surface.
+PC4 and above have very little contrast and increasing amounts of noise.
+
+Let's rescale the first three principal components for visualization in a single RGB image.
+I have arbitrarily inverted the second and third bands to improve the visualization.
+That is ok, because PCA loadings are arbitrarily negative or positive in direction.
+It's the magnitude of rotation that matters, not the direction (+/-).
+
+```{r}
+outmin <- min(out$PC1)
+outmax <- max(out$PC1)
+out$PC1 <- (out$PC1 - outmin) / (outmax - outmin) * 255
+outmin <- min(out$PC2)
+outmax <- max(out$PC2)
+out$PC2 <- 255- (out$PC2 - outmin) / (outmax - outmin) * 255
+outmin <- min(out$PC3)
+outmax <- max(out$PC3)
+out$PC3 <- 255- (out$PC3 - outmin) / (outmax - outmin) * 255
+```
+
+What does our false color composite of the first three components look like?
+
+```{r}
+plot(merge(out[1:3]), interpolate = TRUE, breaks = "equal", rgb = c(1,2,3), maxColorValue = 255)
+```
+
+
+
+
